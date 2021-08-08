@@ -1,0 +1,298 @@
+---
+title: 'Lab 1: Question 2'
+author: "Aditya Bajaj, Ruby Han, Gerrit Lensink"
+output: 
+  bookdown::pdf_document2:
+    toc: true
+---
+
+```{r load packages, echo = FALSE, warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2) 
+library(tidyverse) # if you want more, but still core, toolkit
+library(patchwork)
+library(magrittr)
+# if(!require(BSDA)){install.packages("BSDA")}
+# library(BSDA)
+```
+
+```{r define a graphing theme, echo = FALSE}
+minimal_theme <- theme(
+      axis.text = element_text(color="#959292"),
+      axis.line = element_line(color = "#959292", size = .25), 
+      axis.title = element_text(color="#959292"),
+      axis.ticks = element_line(color = "#959292", size = .25),
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(), 
+      panel.background = element_blank(), 
+      plot.title = element_text(color="#959292"),
+      plot.subtitle = element_text(color="#959292"),
+      legend.text = element_text(color="#959292"), 
+      legend.title = element_blank(), 
+      legend.justification=c(0,1), 
+      legend.position=c(0,1), 
+      legend.direction = 'horizontal')
+```
+
+```{r Explore: load and select relevant columns, echo=FALSE, warning=TRUE, message=FALSE}
+
+# raw_data <- haven::read_dta('/home/jovyan/W203/labs/lab_1/anes_timeseries_2020_stata_20210211.dta')
+raw_data <- haven::read_dta('anes_timeseries_2020_stata_20210211.dta')
+
+q2_raw <- raw_data %>% 
+  rename( # Select Variables of Interest
+     party_registration = V201018,
+     party_id = V201228,
+     reg_intent = V201019,
+     biden_score = V201151,
+     harris_score = V201153
+    ) %>% 
+  select(
+    party_registration, party_id, reg_intent, biden_score, harris_score)
+
+# Description of Included Variables: 
+### V201018 - Pre: party of registration
+  # 1. Democratic Party
+  # 2. Republican Party
+  # 4. None or 'independent'
+  # 5. Other {Specify}
+  # -1. Inapplicable (not registered?)
+  # -8. Don't know
+  # -9. Refused
+### V201228 - Party ID (think of self as democrat, republican, or independent)
+  # 0. No Preference {VOL}
+  # 1. Democrat
+  # 2. Republican
+  # 3. independent
+  # 5. Other {Specify}
+  # -4. Inapplicable (not registered?)
+  # -8. Don't know
+  # -9. Refused
+### V201151 - pre: feeling thermometer: joe biden, democratic presidential candidate
+  # 0-100. Actual Value
+  # 998. Don't know (don't know where to rate)
+  # -4. Technical Error
+  # -9. Refused
+### V201153 - pre: feeling thermometer: kamala harris, democratic vice-presidential candidate
+  # 0-100. Actual Value
+  # 998. Don't know (don't know where to rate)
+  # -4. Technical Error
+  # -9. Refused
+### V201019 - Pre: does R intend to register to vote
+  # 1. Yes, intend to register
+  # 2. No, do not intend to register
+  # -1. Inapplicable
+  # -8. Don't know
+  # -9. Refused
+```
+
+```{r Explore: check party registration versus ID, echo = FALSE}
+party_check <- q2_raw %>% 
+  select(party_registration, party_id) %$%
+table(party_id, party_registration)
+
+# notice there are a decent amount of registered democrats who now identify as something else
+id_on_reg <- party_check[,'1']
+
+# Notice some ID as democrat with different registered party affiliation
+reg_on_id <- party_check['1',]
+```
+
+```{r Explore: summarize political party, echo = FALSE}
+parties <- q2_raw %>% 
+  mutate(
+    party = case_when(
+      party_id == 1 ~ "Democrat",
+      party_id == 2 ~ "Republican",
+      party_id <= 0 ~ "Other",
+      party_id > 2 ~ "Other"), 
+    ) %>%
+  select(party) %$%
+  table(party)
+```
+
+```{r Clean: filter to relevant data for graphing/analysis, echo = FALSE}
+q2_data <- q2_raw %>% 
+  # First filter to identify "Democrat Voters" - must be registered (to something) 
+  filter((party_registration != -1 | # (Filter out "Inapplicable" response OR
+            (party_registration == -1 & reg_intent == 1)) & # "Inapplicable" with "intend" to register) AND
+           party_id == 1) %>% # Identify as a democrat (1)
+
+  # Second filter to select only "Clean" scores (0,100)
+  filter(
+      (biden_score >= 0 & biden_score <= 100) &
+      (harris_score >= 0 & harris_score <= 100)
+    ) %>% 
+  select(party_id, biden_score, harris_score)
+```
+
+
+\clearpage 
+
+# Are Democratic voters more enthusiastic about Joe Biden or Kamala Harris?
+
+## Importance and Context
+<!-- You can (and should delete each of these comments lines in your final report) --> 
+<!-- Explain why the reader should care about your research question. -->
+
+Difference in opinion between Presidential and Vice-Presidential candidates is of growing significance as "the importance of the vice president has [...] grown" over time (Grofman & Kline). As the Vice-Presidential nomination is becoming increasingly more important, pollsters, the DNC, and other political entities are likely interested in voter enthusiasm not just for the entire democratic ticket, but for each candidate separately. 
+
+In a polarized election such as the 2020 presidential race, then-presidential candidate Joe Biden could not afford to nominate a VP that would reduce the favor of his overall ticket. If there is any major difference in opinion between the two partners, election prediction models may yield different outcomes. Additionally, leaders within the Democratic National Convention are surely interested in voter enthusiasm for VP nominee Kamala Harris as they evaluate the future figure-heads of their party. 
+
+Advisers in the Biden campaign might also be interested in these results as they evaluate their nomination of then-Senator Harris. Any net-negative level of enthusiasm to their nomination could be an indicator of an unfavorable outcome to their campaign, and at worst sway democratic voters away from the ticket. 
+
+The following analysis of ANES 2020 election data provides evidence that there is no meaningful difference between enthusiasm for Biden or Harris among democrat voters, using a 0-100 "Feeling Thermometer" as a proxy for voter enthusiasm. 
+
+## Description of Data
+<!-- Explain how your research question is operationalized, including whether the variables you create are appropriate to study the concepts in question. --> 
+<!-- What are some basic features of the data distribution? --> 
+<!-- What changes do you make to the data and why? --> 
+
+```{r plot for histogram/density, echo = FALSE}
+hist_density <- q2_data %>%
+  select(biden_score, harris_score) %>% 
+  pivot_longer(cols = c(biden_score, harris_score)) %>%
+  mutate(
+    name = case_when(
+      name == 'biden_score' ~ 'Biden',
+      name == 'harris_score' ~ 'Harris')
+  ) %>%
+  ggplot(aes(x = value, fill = name)) +
+  geom_histogram(position = 'dodge', bins = 20, alpha = .8) + 
+  scale_fill_manual(values=c("#016394", "#2e3e4d")) +
+  geom_density(aes(x = value, y = ..count..*7.5, color = name), alpha = 0, linetype = "dotted") +
+  scale_color_manual(values=c("#016394", "#2e3e4d")) +
+  scale_x_continuous(breaks = round(seq(0,100, by = 5),1)) +
+  labs(
+    x = "Rating",
+    y = "Count", 
+    title = "Enthusiasm For President and Vice Presidential Candidates",
+    subtitle = "Enthusiasm measured by 'Feeling Thermometer' by Democratic Voters") +
+  scale_y_continuous(expand = c(0,0)) + 
+  minimal_theme 
+```
+
+The survey prompts respondents to "rate" each of the Presidential and Vice-Presidential candidates on a "Feeling Thermometer" scale between 0 and 100. There is no further explanation in the survey, so freedom of interpretation could cause some to rate based on their belief the the candidate will be successful, how much they like the candidate, or any other reasonable interpretation.
+
+Because respondents are not specifically asked about their enthusiasm for each candidate, we are choosing to operationalize Voter Enthusiasm with the "Feeling Thermometer" rating system for each candidate. Although this is not an exact measure of enthusiasm, it provides the best measure of a respondent's rating in general of a candidate.
+
+In addition to the lack of explicit "enthusiasm" measure, the metric nature of the "Feeling Thermometer" also poses a number of risks to inferential integrity if the wrong test is chosen. First, the "distance" between a rating of 50 and 70, may not be the same as the "distance" between 70 and 90, as the numeric scale might intuitively suggest. Second, two respondents may differently interpret a rating of 75.
+
+**Table 1: Identifying "Voters"**
+
+|Intend to Register   | Dem. | Rep. | None/Ind. | Other | Inapplicable | Don't Know | Refused |
+| ------------------- | ---- | ---- | --------- | ----- | ------------ | ---------- | ------- |
+|Yes                  |      |      |           |       | X            |            |         |
+|No                   |      |      |           |       |              |            |         |
+|Inapplicable         | X    | X    | X         | X     |              | X          | X       |
+|Don't Know           |      |      |           |       |              |            |         |
+|Refused              |      |      |           |       |              |            |         |
+
+Additionally, "Voters" are defined as respondents who are either registered voters at the time of survey, or intend to register, as outlined in Table 1. Democratic voters are then defined by filtering to respondents who "Think of self as Democrat" (V201228). These respondents represent roughly 35% of all observations. We have chosen to make the important distinction between party registration and party identification due to the fact that some respondent's party_id and party_registration do not match. This could be because they refused to provide their registration, can't remember, or are registered to a different party than they currently identify with. Furthermore, party_id is likely a more current representation of political affiliation as some respondents may have selected a party when they registered to vote that they no longer affiliate with, but have not updated their voter registration.
+
+Finally, data were also filtered to exclude any responses with technical difficulties, refusal to respond, or where the respondent either did not know how to rate, or who the candidate was. 
+
+Distribution of ratings for both candidates follow a similar shape, with peaks around round numbers (70, 85, 100) and a heavy right skew (Figure 1). In both cases, the majority of registered Democrats prescribe candidate ratings higher than 50%.
+
+
+```{r plots, message = FALSE, echo = FALSE, fig.cap='Voter Enthusiasm by Candidate', fig.pos = '!H'}
+hist_density
+```
+
+```{r summary-table, echo = FALSE}
+# summary_table <- knitr::kable(
+#   prop.table(table(parties$party)),
+#   digits = 2,
+#   caption = "Cross tab of Parties by Respondent",
+#   booktabs = TRUE
+# 
+# )
+```
+
+
+
+
+
+
+
+
+## Most appropriate test 
+<!-- Explain which test is the most appropriate to answer your question and why it is the most appropriate --> 
+<!-- List every assumption that your test requires and evaluate it. -->
+
+Although we have plenty of observations (> 1000) and could invoke the central limit theorem, the data does have a heavy right skew (Figure 1) selecting a non-parametric test would be most conservative. Because we know power is similar between parametric and non-parametric tests with large n, we are not sacrificing any substantial amount of power in our test. Additionally, since the data is ordinal and sample averages are undefined, Wilcoxon Signed-rank test and Wicoxon rank-sum (comparison of means) are also invalid as they require metric data. 
+
+Since each of the included respondents ranked both Presidential candidate Joe Biden and Vice Presidential candidate Kamala Harris, we can use this paired dependent data to increase the power of our hypothesis test by using the sign test (compared to an independent Wilcoxon Rank-sum (Comparison) test). 
+
+\clearpage
+The (paired) sign test requires fulfillment of the following requirements: 
+
+* **Symmetry in differences around 0:** This requirement is mostly satisfied, given the histogram of differences (Appendix B - Figure 2), and their approximately symmetric bell-like distribution around 0. 
+* **Observations drawn IID:** Based on the random sampling techniques of the surveyors, the assumption of independence is likely upheld, with some minor concerns of systemic non-response based on ability to contact the prospective respondent. Finally, it is likely, due to the random sampling, that observations are identically distributed, barring any systematic filters of the data following collection. 
+
+Therefore, we can accept that the data meets the sign test requirements of symmetry in differences, and IID paired observations, and proceed with the sign test. 
+
+```{r histogram of symmetry, echo = FALSE, warning = FALSE, message = FALSE}
+diff <- q2_data %>% 
+  mutate(
+    difference = biden_score - harris_score) %>% 
+  ggplot() + geom_histogram(aes(x = difference)) + minimal_theme + 
+  labs(title = "Histogram of differences between candidate rating", 
+       subtitle = "Proof of symmetry for Sign Rank test")
+```
+
+## Test, results and interpretation
+<!-- What are the results of your test? --> 
+<!-- What do the results of this test mean? What is the practical significance? --> 
+
+The sign test for differences in "Enthusiasm" rankings between Presidential candidate Biden and Vice-Presidential candidate Harris yields a p-value of ~.52, which is much greater than alpha = .05. In this case, a two-sample test was chosen to test whether the median difference was higher or lower than zero. 
+\newline
+```{r Test: binomial "sign test"}
+# Want a paired test here, but have to use sign test (not signed rank) 
+# because not a metric variable
+score_diff <- q2_data %$% sum(biden_score < harris_score)
+
+# Sign test does not consider where difference is 0, 
+# so only include "<" or ">" in "trials"
+trials <- q2_data %$% sum((biden_score < harris_score) |  biden_score > harris_score)
+
+test <- binom.test(score_diff, trials, alternative = "two.sided")
+cat("P-value of the sign test is", round(test$p.value, 2),
+    " > .05 => fail to reject H0")
+```
+
+```{r Test: check results with another sign test package, echo = FALSE}
+# Need to uncomment BSDA load section above to run this code
+
+# test_check <- q2_data %>% select(biden_score, harris_score) %$%
+#   SIGN.test(x = biden_score, 
+#             y = harris_score, 
+#             alternative = "two.sided", 
+#             conf.level = .95)
+
+```
+
+
+The p-value of .52 leads us to **fail** to reject the null hypothesis that *the true median difference is equal to 0*. This is equivalent to saying that given the shape of the data, non-metric measure, and the chosen test, there is not enough evidence to say that the Kamala Harris or Joe Biden were rated either higher or lower than the other among Democrat voters. This is a reasonable conclusion, as both candidate rating distributions shared similar shapes (Figure 1). In summary, based on these results, we could suggest the DNC does not need to be concerned with the VP candidate having a much higher or much lower rating than the presidential candidate.
+
+## Test Limitations
+
+Although the sign test suggested the null hypothesis should not be rejected, based on imperfections in the data different outcomes could be reached with different data. 
+
+First, since we could not perfectly pinpoint "voters", the sample may be misrepresentative if some of our defined group chooses to not vote, or if our exclusion techniques removed those that did plan to vote. Second, the survey did not have perfect responses related to political affiliation for all observations. Some refused to answer and others had technical difficulties, so the data may not truly represent affiliations properly. Finally, respondents were financially incentivized to complete the survey, which could cause sample selection that is systematically not representative of the population. For these reasons, our test may change with different samples or sampling techniques. 
+
+None of these realizations should give reason to discredit the test and conclusion, but they are crucial to realize when understanding the limitations of our statistical analysis. 
+
+\newpage
+# Appendix
+
+## Appendix A: References
+Grofman, B., Kline, R. (n.d.). Evaluating the Impact of Vice Presidential Selection on Voter Choice. Retrieved February 28, 2021, from https://www.mwpweb.eu/1/76/resources/publication_522_1.pdf
+
+American National Election Studies. (2021). 2020 Time Series Study (February 11, 2021 Version) [.dta file]. Retrieved from https://electionstudies.org/data-center/2020-time-series-study/
+
+## Appendix B: Additional Figures
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, fig.cap = "Histogram of Differences in Candidate Ranking"}
+diff 
+```

@@ -1,0 +1,216 @@
+---
+title: 'Lab 1: Question 3'
+author: "Ruby Han, Gerrit Lensink, Aditya Bajaj"
+output:
+  pdf_document:
+    toc: yes
+  bookdown::pdf_document2:
+    toc: yes
+  html_document:
+    toc: yes
+    df_print: paged
+---
+
+```{r load packages, echo=FALSE, warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2) 
+library(tidyverse) # if you want more, but still core, toolkit
+library(labelled)
+library(hrbrthemes)
+library(gt)
+library(knitr)
+```
+
+\newpage
+```{r load data, echo = FALSE, warning = TRUE, message = FALSE}
+# Reading the raw data
+raw_data <- haven::read_dta('anes_timeseries_2020_stata_20210211.dta')
+```
+
+```{r echo = FALSE, warning = TRUE, message = FALSE}
+minimal_theme <- theme(
+      axis.text = element_text(color="#959292"),
+      axis.line = element_line(color = "#959292", size = .25), 
+      axis.title = element_text(color="#959292"),
+      axis.ticks = element_line(color = "#959292", size = .25),
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(), 
+      panel.background = element_blank(), 
+      plot.title = element_text(color="#959292"),
+      plot.subtitle = element_text(color="#959292"),
+      legend.text = element_text(color="#959292"), 
+      legend.title = element_blank(), 
+      legend.justification=c(0,1), 
+      legend.position=c(0,1), 
+      legend.direction = 'horizontal')
+```
+
+
+```{r clean data, echo = FALSE, message=FALSE}
+
+# V201145 approve/disapprove governor handling COVID
+# 1. Approve
+# 2. Disapprove 
+# -8. Don’t know 
+# -9. Refused
+
+# V201146 PRE: HOW MUCH APPROVE/DISAPPROVE R’S GOVERNOR HANDLING COVID-19 Do you [approve/disapprove] strongly or not strongly?
+# 1. Strongly
+# 2. Not strongly
+# -1. Inapplicable 
+# -8. Don’t know 
+# -9. Refused
+
+# V201624 Has anyone in your household tested positive for the coronavirus disease, COVID-19, or has no one tested positive?
+# 1. Someone in my household tested positive 
+# 2. No one tested positive
+# -5. Interview breakoff (sufficient partial IW) 
+# -9. Refused
+
+q3_data <- raw_data %>% 
+  rename(
+     governor_approval = V201145,
+     approval_scale = V201146,
+     covid_test = V201624
+    ) %>% 
+  select(
+    governor_approval,approval_scale, covid_test
+    ) %>%
+  filter(
+    governor_approval > 0 &
+    covid_test > 0 & approval_scale > 0
+  ) %>%
+  mutate(
+   governor_approval = governor_approval,
+    covid_test = covid_test,
+    approval_scale = approval_scale
+    )
+```
+
+
+```{r echo = FALSE, message=FALSE}
+q3_data$governor_approval[q3_data$governor_approval== 2] <- 0
+q3_data$approval_scale[q3_data$approval_scale== 2] <- 0
+q3_data$covid_test[q3_data$covid_test== 2] <- 0
+covid_positive <- q3_data %>%filter(covid_test == 1)%>%select(governor_approval,approval_scale)
+covid_negative <- q3_data %>%filter(covid_test == 0)%>%select(governor_approval,approval_scale)
+data_set_with_no_approval_scale <- q3_data %>%select(governor_approval,covid_test)
+t1 <- as.data.frame(table(data_set_with_no_approval_scale)) %>% gt() %>% tab_header(
+  title = md("**Governor Approval Ratings VS. Covid Infections**"),
+  subtitle = "A value of 1 signifies a positive rating or covid test and 0 signifies a negative"
+) %>%  cols_label(
+    governor_approval = "Governor Approval",
+    covid_test = "COVID Test"
+  )
+```
+
+
+```{r echo = FALSE, warning = TRUE, message = FALSE}
+t2 <- as.data.frame(table(covid_positive)) %>% gt() %>% tab_header(
+  title = md("**Governor Approval Ratings VS. Approval Sentiment for Covid Pos.**"),
+  subtitle = "A value of 1 signifies a positive rating or strong sentiment and 0 signifies a negative rating or not strong sentiment"
+) %>%  cols_label(
+    governor_approval = "Governor Approval",
+    approval_scale = "Approval Sentiment"
+  )
+```
+
+```{r echo = FALSE, message=FALSE}
+t3 <-as.data.frame(table(covid_negative)) %>% gt() %>% tab_header(
+  title = md("**Governor Approval Ratings VS. Approval Sentiment for Covid Neg.**"),
+  subtitle = "A value of 1 signifies a positive rating or strong sentiment and 0 signifies a negative rating or not strong sentiment"
+) %>%  cols_label(
+    governor_approval = "Governor Approval",
+    approval_scale = "Approval Sentiment"
+  )
+```
+
+```{r plottingdata, echo = FALSE, warning = TRUE, message = FALSE}
+p <- ggplot(q3_data, aes(x = factor(governor_approval))) + geom_bar((aes(fill=factor(covid_test))))  + minimal_theme +
+  scale_fill_discrete(labels = c("Covid Negative", "Covid Positive")) +  scale_x_discrete(labels=c("Disapprove", "Approve")) + ggtitle("Summary of Approval Ratings versus Case Count") + xlab("Governor Approval") + ylab("Count") + geom_text(aes(label=..count..),stat="count",position=position_stack(1))
+```
+# 1 Are survey respondents who have had someone in their home infected by COVID-19 more likely to disapprove of the way their governor is handling the pandemic?
+
+## 1.1 Importance and Context
+
+The Coronavirus continues to spread around the world and United States of America has the highest total infection count of 28.554 million. While the majority of us never expected to face a pandemic in our lifetime, this calamity has made Americans question the role governments play in managing public health crisis. The population of America started to look up to their leaders for information, treatment, support, vaccinations and a lot more! Some people lost jobs, while others were able to monetize on the virtual economy. With a loss of jobs also came a loss of healthcare benefits as well as unpaid bills. In the 2020 election campaign, handling of the COVID-19 pandemic was one of the major issues the nation felt strongly about.
+
+As the war against COVID-19 continues, a lot of questions still remain unanswered. Is there an end to the COVID-19 pandemic? How do the decisions taken by governors of each state affect their approval ratings? Do households infected with COVID-19 feel the government could have done more or are they satisfied with the current level of action? The answer to these questions could provide guidance to future governments about the role they should play in similar public health crisis.
+
+## 1.2 Description of Data
+We will address this question using data from the 2020 American National Election Studies (ANES). The project that has been ongoing since 1948, and federally funded by the National Science Foundation since 1977. 
+
+While the 2020 ANES data surveyed respondents for multitudinous issues, the data for analysis will be limited to three questions. The first question asks the respondents whether they approve or disapprove their governor based on their handling of Coronavirus pandemic. The second question asks respondents about how *strong* or *not strong* is their sentiment regarding question 1. This data is represented by the *approval sentiment* column. Lastly, respondents are asked if any members of their households tested positive for Coronavirus. 
+
+Figure 1 shows the distribution of responses of governor approval ratings. It is also observed that only 3.46% of the respondents reported having someone in their household infected with Coronavirus.
+
+```{r  echo = FALSE, warning = TRUE, message = TRUE, fig.width = 6, fig.height = 2.9}
+plot(p)
+```
+
+
+**Figure 1**
+
+\newpage
+Table 1 and Table 2 below show the relationship between the governor approval ratings and respondent sentiment towards the rating. The first table limits the data to households with no Coronavirus infections, while the second table limits the data to households which had an infected member.
+
+```{r  echo = FALSE, warning = TRUE, message = FALSE, fig.caption='Table 1'}
+t2
+```
+**Table 1** 
+
+```{r  echo = FALSE, warning = TRUE, message = FALSE, fig.caption='Table 2'}
+t3
+```
+**Table 2**
+
+It is observed that 33.4% of the respondents *strongly* approve their governors in Covid positive households while 39.4% of the respondents *strongly* approve their governors in the Covid negative households.
+
+To examine factors behind governor approval, I limit the data to the **governor approval**  and **covid test** responses. Given the subjective nature of the word *strong* and *not strong*, the response can be interpreted differently by each household. The relationship between **governor approval** and **covid test** responses may hold the best clues for checking the affect of Coronavirus management on governor ratings.
+
+## 1.3 Most appropriate test 
+
+Based on the above data, the question of whether survey respondents are more likely to disapprove of their governor if someone in their home was infected can be tested for. Since the binary variables are metric in nature, a parametric test is appropriate. The data is unpaired since each observation of approval and disapproval is independent. The **governor approval** variable is approximately normal based on the ratio of 38% disapproval ratings to 62% approval ratings. The unpaired T test can be used to answer the above question. It is implemented in R using `t.test`.
+
+The T test requires the following assumptions to be true:
+
+- i.i.d. data. The ANES 2020 used a contactless, mixed-mode design. The 2020 ANES pre-election sample consists of several groups interviewed using multiple modes such as Web, Video and Phone. The participants were drawn randomly from USPS computer deliver sequence file which included all residential addresses across the 50 states and Washington DC having equal probability of selection. The sample also consisted of members from the ANES 2016 Time Series Study. Based on the above random sampling techniques and using contactless interviews to avoid bias, the data meets the IID requirement. 
+
+- Metric scale. The data for *governor_approval* is binary in nature with 1 signifying a positive rating and 0 signifying a negative rating. Based on this, the data meets the metric scale requirement.
+
+- Approximately normal- The governor_approval variable is approximately normal. A ratio of 38 to 62 was observed between disapproval to approvals. Since the sample size of 8,128 is considerably larger than 30, the central limit theorem applies here showing the sample means is normally distributed. 
+
+A two tailed T-test with two samples will be conducted to reduce Type I errors. The alpha value used will be 0.05. The first sample would be of *governor approvals* from households with COVID infections and the second sample would be of *governor approvals* from households with no COVID infections.
+```{r  echo = FALSE, warning = TRUE, message = FALSE}
+temp_data <- q3_data %>% select(governor_approval,covid_test)
+```
+
+
+```{r  echo = FALSE, warning = TRUE, message = FALSE}
+covid_negative_vector <- filter(temp_data,covid_test == 0)$governor_approval # does not have covid
+covid_positive_vector <- filter(temp_data,covid_test == 1)$governor_approval # has covid
+```
+
+## 1.4 Test, results and interpretation
+The null hypothesis for the T test was that there is no difference between the mean of approval ratings for households with Coronavirus infections compared to households with no Coronavirus infections. With a p-value of 0.0443, I find evidence to reject the null hypothesis. This result was not anticipated based on the data as it showed a very even distribution between approval to disapproval among the COVID positive households.
+
+Although it was difficult to anticipate the result based on the limited sample of Coronavirus positive households, it has a tremendous practical significance. The Coronavirus has affected people throughout the country. Based on the results, Americans are evaluating their governor's performance on how they handle the public health crisis. The conclusion adds up as people have been affected financially, emotionally and physically due to the pandemic. Americans may come out of the pandemic having a different view of healthcare, jobs and economy.
+```{r t_test,  echo = TRUE, warning = TRUE, message = FALSE}
+# x vector consists of all governor ratings for households with no Covid infections.
+# y vector consists of all governor ratings for households with postive Covid infections.
+# two sided T-test, alpha = 0.05
+res<-t.test(x= covid_positive_vector, y = covid_negative_vector,mu=0) 
+```
+
+## 1.5 Test Limitations 
+
+The 2020 ANES Survey data was collected pre-election. The election happened in November 2020 and ever since then, the Coronovirus has spread aggressively due to new strains and lack of information or resistance to wearing masks. Another important aspect to keep in mind is that a lot of the younger age groups show very mild symptoms when it comes to Coronavirus infections. This may lead to a lot of households not knowing that a member has been infected. There might be a larger percentage of survey respondent who come from infected households. The test does not account for the above factors and it would interesting analyze how the expectations of people have changed from the government given that they have gone through this pandemic!. 
+
+\clearpage
+
+# Appendix
+
+## References
+American National Election Studies (2021). 2020 Time Series Study (February 11, 2021 Version) [.dta]. Retrieved from https://electionstudies.org/data-center/2020-time-series-study/
+
+“Tracking Covid-19's Global Spread.” CNN, Cable News Network, www.cnn.com/interactive/2020/health/coronavirus-maps-and-cases/. 

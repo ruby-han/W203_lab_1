@@ -1,0 +1,194 @@
+---
+title: 'Lab 1: Question 1'
+author: 'RBG (Ruby Bajaj Gerrit) Team'
+output:
+  bookdown::pdf_document2: 
+    toc: true
+---
+
+\clearpage
+
+```{r load packages, echo=FALSE, warning=FALSE, message=FALSE}
+# loading packages
+library(dplyr)
+library(ggplot2) 
+library(tidyverse)
+library(knitr)
+```
+
+```{r load raw data, echo=FALSE, warning=TRUE, message=FALSE}
+# anes2020_raw_data <- haven::read_dta('/home/jovyan/W203_RDataHub/lab_1-rbg_team/anes_timeseries_2020_stata_20210211.dta')
+anes2020_raw_data <- haven::read_dta('anes_timeseries_2020_stata_20210211.dta')
+```
+
+```{r filter data, echo=FALSE, warning=TRUE, message=FALSE}
+q1 <- anes2020_raw_data[,c('V201507x', 'V201018', 'V201228', 'V201019')]
+
+q1$age <- q1$V201507x
+less_than_zero <- length(q1$age[q1$age < 0])
+
+q1$partyreg <- q1$V201018
+na_partyreg <- length(q1$partyreg[q1$partyreg == -1])
+dem_partyreg <- length(q1$partyreg[q1$partyreg == 1])
+rep_partyreg <- length(q1$partyreg[q1$partyreg == 2])
+
+q1$partyid <- q1$V201228
+q1$regtovote <- q1$V201019
+
+q1 <- subset(q1, (partyreg != -1 | (partyreg == -1 & regtovote == 1)) & (partyid == 1 | partyid == 2) & age > 0)
+eighty_or_older <- length(q1$age[q1$age == 80])
+q1$party <- ifelse(q1$partyid == 1, 'Democrats', 'Republicans')
+```
+
+# Are Democratic voters older or younger than Republican voters in 2020?
+
+## Importance and Context
+
+Much is known in the political science realm about sociodemographic factors such as race and household incomes on political affiliations. However, age has always been ignored despite the fact that age is one of the strongest predictors in terms of voter turnouts in presidential elections (Holland 2013). In both the 2008 and 2012 presidential elections, younger crowds overwhelmingly voted for then Democrat Barack Obama (Holland 2013). Does that mean that Democratic voters are younger than their Republican counterparts? 
+
+We will further explore this research question using the ANES 2020 Time Series Study which is a continuation of series of election studies conducted since 1948 to support analysis of public opinion and voting behavior in US presidential elections. The result could potentially help provide additional insights into the complexity of what drives voter turnout and choice within the American electorate in which a special emphasis will be placed on the role of age in spurring voter choice.
+
+## Description of Data
+
+```{r plot, message = FALSE, echo = FALSE, fig.cap='Voter Age by Party'}
+dem_age <- q1[q1$party == 'Democrats', ]$age
+rep_age <- q1[q1$party == 'Republicans', ]$age
+
+min_break <- min(c(dem_age, rep_age)) - 0.001 # set min for breakpoints
+max_break <- max(c(dem_age, rep_age)) # set max for breakpoints
+ax <- pretty(min_break:max_break, n = 30) # create neat vector for the breakpoints
+
+c1 <- rgb(0, 0, 1, 3/4) 
+c2 <- rgb(1, 0, 0, 3/4)
+
+dem_hist <- hist(dem_age, breaks = ax, plot = FALSE)
+rep_hist <- hist(rep_age, breaks = ax, plot = FALSE)
+
+plot(0, 0, type = "n", ylim = c(0, 110), xlim = c(15, 85), xlab = "Age", ylab = "Frequency", main = 'Histogram of Voter Age')
+plot(dem_hist, col = c1, add = TRUE) # plot 1st histogram
+plot(rep_hist, col = c2, add = TRUE) # add 2nd histogram
+legend(17, 95, legend = c('Democrats', 'Republican'), fill = c(c1, c2), cex = 0.9)
+```
+
+We have two main variables that we need to operationalize in order to test the research question. We used ANES variable V201507x to determine voter age. There were `r less_than_zero` instances of respondents who refused to disclose their ages and were omitted from the dataset. The age variable is bucketized from 18 to 79 as actual age values and any age 80 or older responses is grouped into the 80 bucket. This accounted for `r eighty_or_older` instances and there is a risk of skewing the end result due to data obfuscation.
+
+Subsequently, we made use of ANES variables V201018 (`party of registration`), V201228 (`party id`) and V201019 (`intent to register to vote`) to represent our `voter by party` (Democrat or Republican) variable. We made an important distinction between `party of registration` and `party id` as the responses do not match in some cases. As a registered voter is not required to affiliate themselves with a party prior to voting in a party’s primary election, we made the assumption that the `inapplicable` category within `party of registration` variable is still a valid category to use provided that respondents who answered `inapplicable` also answered `yes` in their `intent to register to vote` question. All other categories were considered to be erroneous and unknown data and thus will be omitted. We then filtered and cross-validated the data subset with variable `party id` to aggregate Democratic and Republican voters.
+
+As reported in Table \@ref(tab:table), we determined `r length(q1$party[q1$party == 'Democrats'])` Democratic and `r length(q1$party[q1$party == 'Republicans'])` Republican voters based on our methodology of defining `voter by party` variable. 
+
+In Figure \@ref(fig:plot), distributions of age for both Democratic and Republican voters share similar traits with a sharp spike on the right. This is probably attributed to the age cap of 80 for all 80 or older voters as mentioned previously. 
+
+```{r table, echo = FALSE}
+kable(
+  table(q1$party),
+  caption = 'Democrat and Republican Distribution', 
+  booktabs = TRUE,
+  col.names = c('Party','Frequency')
+)
+```
+
+## Most appropriate test 
+
+We will then need to test and compare the age across this subgroup. As these variables are metric and continuous, a parametric test is appropriate. In addition, the data is unpaired since we are comparing a group of voters by age and party choice. Based on these initial assumptions, we will use an unpaired t-test, implemented in R using `t.test`.
+
+The unpaired t-test requires the following validations to be true:
+
+- **Approximately normal:** 
+
+Based on Figure \@ref(fig:plot), although the distribution isn't clearly normally distributed, it really isn't that poorly distributed. There isn't a clear central tendency but the dispersion is reasonably contained. We have `r length(q1$party)` and this satisfies the Central Limit Theorem (CLT) requirement of more than 30 observations to achieve a normal sampling distribution as shown in the Appendix section, Figure \@ref(fig:sample-mean). However, as noted in the previous section, there appears to be a sharp skew on the right of the histogram. Once again, this is due to the age 80 or older data points being truncated at 80 resulting in the skew. Nevertheless, this skew is negated by `r length(q1$party)` data points.
+
+- **Metric scale:** 
+
+Both age and number of voters by party are on a metric scale in which the frequency or count represent a meaningful measurement.
+
+- **I.i.d data:** 
+
+There is some hesitation in saying that the dataset is completely i.i.d. as respondents who complete the 2020 survey online are rewarded and thus incentivized to complete the survey. There is a possibility of introducing dependencies. For example, respondents may refer friends or family members who receive similar invitations to complete the survey resulting in a cluster of individuals giving similar responses. Nevertheless, the data is assumed to collected from a representative, randomly selected portion of the population as this sample consists of the full set of sample members from the ANES 2016 Time Series Study who have completed the post-election interview. Thus, it is i.i.d. enough to justify using the unpaired t-test.
+
+In addition, we chose to select a two-tailed t-test to cover all our bases and eliminate any bias in our test. In short, even though not all requirements are met, they are close enough given the large sample size to validate using the unpaired two-tailed t-test.
+
+## Test, results and interpretation
+
+```{r t-test}
+t.test(age ~ party, data = q1, paired = FALSE, alternative = "two.sided")
+```
+
+The unpaired t-test for difference in mean between the age of Democratic and Republican voters yields a p-value of $0.0000039$ which is lower than $\alpha = 0.05$. Since the p-value computed is so much smaller relative to the significance level, $\alpha$, this suggests a strong evidence in favor of the alternative hypothesis in which there is a statistical significance of observed differences between the mean ages. 
+
+This leads us to reject the null hypothesis that the true difference in means is equal to 0. The practical significance of the result is that we have sufficient evidence to say that the age difference between Democratic voters and Republican voters is not 0 and the hypothesized effect exists. Among the Democratic group, the mean age is approximately three years younger on average compared to its counterpart. This difference of about three years might typically be considered a small effect but this effect is large enough to produce a statistically significant result due to a polarized electorate. Interestingly enough, the means for both group lie in the middle age range and this leads to the question on why the younger age range group (18-30) is less likely to vote and further exploration will be needed to provide guidance on how to increase voter turnout amongst this group.
+
+## Test limitations
+
+Even though the unpaired t-test produced a statistically significant result, a different outcome altogether could be obtained due to the below test limitations.
+First, respondents 80 or above are bucketed into one bin 80+ which limits the test and creates inaccuracy in terms of not knowing the true mean or variance and distribution shape. Second, we could not pinpoint 'voters' perfectly. Hence, the sample may be misrepresented if our define group opts to not vote or if our exclusion technique removed those that have the intent to vote. Third, respondents are incentivized to complete the survey and thus introducing the possibility of dependencies. Fourth, the political affiliations for all observations may not be accurate as some respondents chose to not disclose their answer or others experienced technical difficulties. Nonetheless, these realizations should not discredit our test utilization and conclusion. However, these test limitations must be kept in mind when interpreting the test result.
+
+\clearpage
+
+# Appendix
+
+## References
+American National Election Studies (2021). 2020 Time Series Study (February 11, 2021 Version) [.dta]. Retrieved from https://electionstudies.org/data-center/2020-time-series-study/
+
+Holland, Jenny Lynn (2013). Age Gap? The Influence of Age on Voting Behavior and Political Preferences in the American Electorate. Retrieved February 28, 2021 from http://hdl.handle.net/2376/4982
+
+## Plot
+
+```{r transform data, echo=FALSE, warning=TRUE, message=FALSE}
+# anes <- anes2020_raw_data %>%
+#   rename(
+#     party_registration = V201018, # dem = 1, rep = 2, none/independent = 4, other = 5, inapplicable = -1, don't know = -8, refused = -9
+#     party_id = V201228, # no pref = 0, dem = 1, rep = 2, independent = 3, other = 5, tech error = -4, don't know = -8, refused = -9
+#     intend_register_to_vote = V201019, # yes = 1, no = 2, inapplicable = -1, don't know = -8, refused = -9
+#     age = V201507x # 18-79 actual value, 80 age 80 or older, -9 refused
+#   ) %>%
+#   select(
+#     age, party_registration, party_id, intend_register_to_vote
+#   ) %>%
+#   filter(
+#     (party_registration != -1 | (party_registration == -1 & intend_register_to_vote == 1)) & (party_id == 1 | party_id == 2) & (age > 0)
+#   ) %>%
+#   mutate(
+#     dem_age = case_when(
+#       party_id == 1 ~ 'Democratic Voter Age'
+#     ),
+#     rep_age = case_when(
+#       party_id == 2 ~ 'Republican Voter Age'
+#     ),
+#     party_id = as_factor(party_id),
+#     intend_register_to_vote = as_factor(intend_register_to_vote),
+#     party_registration = as_factor(party_registration)
+#   )
+# summary(anes)
+# dim(anes)
+# head(anes)
+```
+
+```{r barplot, echo=FALSE, warning=TRUE, message=FALSE}
+# tb <- barplot(table(q1$party), main = 'Democrats and Republican Distribution')
+# text(tb, table(q1$party)-100, labels = table(q1$party), cex = 0.9)
+```
+
+```{r sample-mean, echo=FALSE, warning=TRUE, message=FALSE, fig.cap = 'Sample Mean'}
+sample_mean_table_dem <- NULL
+
+for (i in 1:10000){
+  sample_index <- sample(length(dem_age), 30)
+  sample_mean_table_dem[i] <- mean(dem_age[sample_index])
+}
+
+sample_mean_table_rep <- NULL
+
+for (i in 1:10000){
+  sample_index <- sample(length(rep_age), 30)
+  sample_mean_table_rep[i] <- mean(rep_age[sample_index])
+}
+
+dem <- hist(sample_mean_table_dem, breaks = 100, plot = FALSE)
+rep <- hist(sample_mean_table_rep, breaks = 100, plot = FALSE)
+
+
+plot(0, 0, type = "n", ylim = c(0, 300), xlim = c(35, 70), xlab = "Age", ylab = "Frequency", main = 'Histogram of Sample Mean of Democratic and Republican Age')
+plot(dem, col = c1, add = TRUE) # plot 1st histogram
+plot(rep, col = c2, add = TRUE) # add 2nd histogram
+legend(35, 200, legend = c('Democrats', 'Republican'), fill = c(c1, c2), cex = 0.9)
+```
